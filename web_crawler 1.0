@@ -1,0 +1,70 @@
+import requests
+import re
+import pandas as pd
+from requests.exceptions import ConnectionError
+from bs4 import BeautifulSoup
+from pymongo import MongoClient
+client=MongoClient(port=27017)
+db=client.web_info
+keywords=pd.read_csv("C:\\Users\\com\\Desktop\\keywords.csv")
+max_pages=25
+page=1
+k=0
+each_row=[]
+dictionary_keywords={}
+dictionary_keywords['dates']=[]
+for each_word in keywords['keywords']:
+    dictionary_keywords[each_word]=[]
+while page<=max_pages:
+    print('page number',':',page)
+    url="http://infosecisland.com/blog/"+str(page)+".html"
+    src=requests.get(url,headers={'user-agent':'Mozilla/5.0'})
+    soup0=BeautifulSoup(src.text,'lxml')
+    each_article=soup0.findAll('h2')
+    for each_tag in each_article:
+        file=open("analysis"+str(k), 'w',encoding='utf-8')
+        count=0
+        weight=0
+        A=each_tag.find('a')
+        url1="http://infosecisland.com" + A.get('href')
+        print(url1)
+        try:
+            src_article=requests.get(url1,headers={'user-agent':'Mozilla/5.0'})
+            soup1=BeautifulSoup(src_article.text,'lxml')
+            body=soup1.body
+            date=body.find('div',class_='viewdate').text
+            print(date.split(', ',1)[1])
+            dictionary_keywords['dates'].append(date.split(', ',1)[1])
+            for each_unwanted in body.findAll(['script','style','css']):
+                each_unwanted.decompose()
+            text_write=body.text
+            file.write(text_write)
+            text=text_write.lower()
+            text=re.sub("['.',':','!',',','?']",'',text).split()
+            for i in range(len(keywords["keywords"])):
+                c=0
+                keyword= keywords["keywords"][i]
+        
+                c=text.count(keyword)
+                n=keywords["weight"][i]
+                if c>0:
+                    count=count+1
+                print(keyword,":",c)
+                weight=weight+c*n
+                dictionary_keywords[keyword].append(c)
+        except ConnectionError as e:
+            print(e)
+        match_percent=count/len(keywords["keywords"])*100
+        each_row.append((url1,date.split(', ',1)[1],weight,match_percent))
+        print("matching percentage is", (match_percent))
+        print("weight is ", (weight)) 
+        file.close()
+        k=k+1
+        db.each_article.insert_one({'date': date.split(', ',1)[1], 'match percent': match_percent, 'weight': str(weight), 'url': url1, 'text': text_write})
+    page=page+1
+df=pd.DataFrame(each_row,columns=('url','date','weight','match percent'))    
+df.set_index('date',inplace=True)
+df.to_csv("C:\\Users\\com\\Desktop\\multi.csv")
+DF=pd.DataFrame(dictionary_keywords, parse_dates=['dates'])
+DF.set_index('dates',inplace=True)
+DF.to_csv("C:\\Users\\com\\Desktop\\word frequency1.csv")
